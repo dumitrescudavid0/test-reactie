@@ -1,0 +1,488 @@
+<!doctype html>
+<html lang="ro">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Test de reacție</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  /* ============================================================
+     PARTEA 1: CSS = aspectul paginii.
+     Layout: o singură coloană centrată. Deasupra, zona mare de atins
+     (pad-ul), dedesubt statistici, iar la final rezultatul sesiunii.
+     Culorile sunt definite o singură dată, ca "variabile" (tokens),
+     iar restul codului le folosește. Așa schimbi tema dintr-un loc.
+     ============================================================ */
+  :root {
+    --bg: #eceff2;
+    --surface: #ffffff;
+    --fg: #11181e;
+    --muted: #55626d;
+    --line: #d2d9df;
+
+    --idle-bg: #11181e;     /* pad-ul înainte de start */
+    --idle-fg: #f1f4f6;
+    --wait-bg: #c4352b;     /* roșu: așteaptă */
+    --wait-fg: #ffffff;
+    --go-bg: #138a47;       /* verde: apasă ACUM */
+    --go-fg: #ffffff;
+    --early-bg: #b8700a;    /* portocaliu: ai apăsat prea devreme */
+    --early-fg: #ffffff;
+    --result-bg: #1d4f91;   /* albastru: rezultatul rundei */
+    --result-fg: #ffffff;
+
+    --font-display: "Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
+    --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0d1216;
+      --surface: #151c22;
+      --fg: #e7ecef;
+      --muted: #94a2ad;
+      --line: #26313a;
+      --idle-bg: #e7ecef;
+      --idle-fg: #11181e;
+      --wait-bg: #d9473c;
+      --go-bg: #36c277;
+      --go-fg: #05210f;
+      --early-bg: #e0952c;
+      --early-fg: #251500;
+      --result-bg: #4a86d6;
+      --result-fg: #04152b;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0d1216;
+    --surface: #151c22;
+    --fg: #e7ecef;
+    --muted: #94a2ad;
+    --line: #26313a;
+    --idle-bg: #e7ecef;
+    --idle-fg: #11181e;
+    --wait-bg: #d9473c;
+    --go-bg: #36c277;
+    --go-fg: #05210f;
+    --early-bg: #e0952c;
+    --early-fg: #251500;
+    --result-bg: #4a86d6;
+    --result-fg: #04152b;
+    color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--fg);
+    font-family: var(--font-display);
+    font-size: 16px;
+    line-height: 1.5;
+    padding-inline: max(16px, env(safe-area-inset-left, 0px)) max(16px, env(safe-area-inset-right, 0px));
+    padding-block: 28px 48px;
+  }
+
+  .wrap { max-width: 640px; margin-inline: auto; display: grid; gap: 20px; }
+
+  header h1 {
+    margin: 0;
+    font-size: clamp(1.75rem, 6vw, 2.5rem);
+    line-height: 1.05;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    text-wrap: balance;
+  }
+  header p { margin: 8px 0 0; color: var(--muted); max-width: 52ch; }
+
+  /* ---------- Pad-ul: zona pe care apeși ---------- */
+  .pad {
+    width: 100%;
+    min-height: clamp(260px, 48vh, 380px);
+    border: 0;
+    border-radius: 10px;
+    padding: 24px;
+    display: grid;
+    place-content: center;
+    gap: 8px;
+    text-align: center;
+    font-family: var(--font-display);
+    cursor: pointer;
+    user-select: none;
+    -webkit-user-select: none;
+    touch-action: manipulation;       /* elimină întârzierea de dublu-tap pe telefon */
+    -webkit-tap-highlight-color: transparent;
+    background: var(--idle-bg);
+    color: var(--idle-fg);
+    transition: background-color 90ms linear;
+  }
+  .pad:focus-visible { outline: 3px solid var(--fg); outline-offset: 3px; }
+
+  /* Culoarea pad-ului depinde de atributul data-state, setat din JavaScript */
+  .pad[data-state="waiting"] { background: var(--wait-bg);   color: var(--wait-fg); }
+  .pad[data-state="go"]      { background: var(--go-bg);     color: var(--go-fg); transition: none; }
+  .pad[data-state="early"]   { background: var(--early-bg);  color: var(--early-fg); }
+  .pad[data-state="result"],
+  .pad[data-state="done"]    { background: var(--result-bg); color: var(--result-fg); }
+
+  .pad-main {
+    font-size: clamp(2rem, 9vw, 3.6rem);
+    font-weight: 700;
+    line-height: 1.05;
+    letter-spacing: -0.02em;
+    text-wrap: balance;
+  }
+  .pad-main .ms { font-family: var(--font-mono); font-weight: 500; letter-spacing: -0.04em; }
+  .pad-main .unit { font-size: 0.45em; margin-left: 0.2em; opacity: 0.8; }
+  .pad-sub { font-size: 1rem; opacity: 0.85; max-width: 34ch; margin-inline: auto; }
+
+  /* ---------- Statistici ---------- */
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 1px;
+    background: var(--line);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    overflow: hidden;
+  }
+  .stat { background: var(--surface); padding: 12px 14px; min-width: 0; }
+  .stat dt {
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+  }
+  .stat dd {
+    margin: 4px 0 0;
+    font-family: var(--font-mono);
+    font-size: 1.25rem;
+    font-variant-numeric: tabular-nums;
+  }
+  @media (max-width: 460px) { .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+  /* ---------- Rundele sesiunii ---------- */
+  .rounds { display: flex; flex-wrap: wrap; gap: 8px; margin: 0; padding: 0; list-style: none; }
+  .rounds li {
+    font-family: var(--font-mono);
+    font-size: 0.95rem;
+    font-variant-numeric: tabular-nums;
+    padding: 6px 12px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    background: var(--surface);
+    color: var(--muted);
+  }
+  .rounds li.filled { color: var(--fg); border-color: var(--fg); }
+
+  /* ---------- Rezultatul final ---------- */
+  .summary { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 20px; display: grid; gap: 14px; }
+  .summary h2 { margin: 0; font-size: 1.25rem; }
+  .summary p { margin: 0; color: var(--muted); }
+  .verdict { color: var(--fg); font-size: 1.05rem; }
+
+  .scale { position: relative; height: 56px; margin-top: 4px; }
+  .scale-track {
+    position: absolute; left: 0; right: 0; top: 18px; height: 8px; border-radius: 4px;
+    background: linear-gradient(90deg, var(--go-bg), var(--early-bg), var(--wait-bg));
+    opacity: 0.85;
+  }
+  .scale .tick { position: absolute; top: 32px; transform: translateX(-50%); font: 0.72rem var(--font-mono); color: var(--muted); }
+  .scale .tick:first-of-type { transform: none; }
+  .scale .marker { position: absolute; top: 6px; width: 4px; height: 32px; border-radius: 2px; transform: translateX(-50%); background: var(--fg); }
+  .scale .marker.ref { background: var(--muted); height: 22px; top: 11px; opacity: 0.7; }
+  .scale .tag {
+    position: absolute; top: -8px; transform: translateX(-50%);
+    font: 500 0.72rem var(--font-mono); white-space: nowrap; color: var(--fg);
+  }
+  .scale .tag.ref { top: 38px; color: var(--muted); display: none; }
+
+  .actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+  .btn {
+    font-family: var(--font-display);
+    font-size: 1rem; font-weight: 500;
+    padding: 10px 18px; border-radius: 8px;
+    border: 1px solid var(--fg); background: var(--fg); color: var(--bg);
+    cursor: pointer;
+  }
+  .btn.ghost { background: transparent; color: var(--fg); border-color: var(--line); }
+  .btn:focus-visible { outline: 3px solid var(--fg); outline-offset: 2px; }
+
+  .note { font-size: 0.85rem; color: var(--muted); max-width: 60ch; }
+
+  @media (prefers-reduced-motion: reduce) { .pad { transition: none; } }
+</style>
+</head>
+<body>
+
+
+<!-- ============================================================
+     PARTEA 2: HTML = structura paginii (ce elemente există).
+     ============================================================ -->
+<div class="wrap">
+  <header>
+    <h1>Cât de repede reacționezi?</h1>
+    <p>Așteaptă ca ecranul să devină verde, apoi apasă cât poți de repede. Fac 5 încercări, iar la final vezi media ta în milisecunde.</p>
+  </header>
+
+  <!-- Pad-ul este un buton, ca să poată fi folosit și cu tastatura (Spațiu sau Enter) -->
+  <button id="pad" class="pad" data-state="idle" type="button" aria-describedby="status">
+    <span id="padMain" class="pad-main">Apasă pentru start</span>
+    <span id="padSub" class="pad-sub">Când ecranul devine verde, apasă imediat.</span>
+  </button>
+  <p id="status" class="note" aria-live="polite" style="margin:0"></p>
+
+  <dl class="stats">
+    <div class="stat"><dt>Încercare</dt><dd id="statRound">0 / 5</dd></div>
+    <div class="stat"><dt>Ultima</dt><dd id="statLast">–</dd></div>
+    <div class="stat"><dt>Media</dt><dd id="statAvg">–</dd></div>
+    <div class="stat"><dt>Recordul tău</dt><dd id="statBest">–</dd></div>
+  </dl>
+
+  <ol id="rounds" class="rounds" aria-label="Rezultatele încercărilor"></ol>
+
+  <section id="summary" class="summary" hidden>
+    <h2>Rezultatul sesiunii</h2>
+    <p id="verdict" class="verdict"></p>
+    <div class="scale" id="scale" aria-hidden="true"></div>
+    <div class="actions">
+      <button id="again" class="btn" type="button">Încearcă din nou</button>
+      <button id="resetBest" class="btn ghost" type="button">Șterge recordul</button>
+    </div>
+    <p class="note">Scara este orientativă. La oameni tineri, timpul de reacție vizual obișnuit este în jur de 200 până la 300 ms. Rezultatul depinde și de ecran, de telefon sau calculator și de ce ai în mână.</p>
+  </section>
+</div>
+
+<script>
+  /* ============================================================
+     PARTEA 3: JavaScript = comportamentul (logica testului).
+     Ideea centrală: testul este un "automat cu stări" (state machine).
+     În orice moment ne aflăm într-o singură stare, iar apăsarea face
+     altceva în funcție de starea curentă:
+
+       idle    --apas-->  waiting   (ecran roșu, pornește un timer aleator)
+       waiting --timer--> go        (ecran verde, pornește cronometrul)
+       waiting --apas-->  early     (ai apăsat prea devreme, nu se numără)
+       go      --apas-->  result    (calculăm: acum - momentul în care a devenit verde)
+       result  --apas-->  waiting   (runda următoare)
+       după 5 runde: done, cu media și scara
+     ============================================================ */
+
+  const ROUNDS = 5;          // câte încercări are o sesiune
+  const MIN_WAIT = 1500;     // pauza aleatorie minimă (ms)
+  const MAX_WAIT = 4500;     // pauza aleatorie maximă (ms)
+  const STORAGE_KEY = "test-reactie-record";
+
+  // Luăm din pagină elementele cu care lucrăm (după id-ul din HTML)
+  const pad = document.getElementById("pad");
+  const padMain = document.getElementById("padMain");
+  const padSub = document.getElementById("padSub");
+  const statusEl = document.getElementById("status");
+  const statRound = document.getElementById("statRound");
+  const statLast = document.getElementById("statLast");
+  const statAvg = document.getElementById("statAvg");
+  const statBest = document.getElementById("statBest");
+  const roundsEl = document.getElementById("rounds");
+  const summary = document.getElementById("summary");
+  const verdictEl = document.getElementById("verdict");
+  const scaleEl = document.getElementById("scale");
+
+  // Starea testului: tot ce trebuie să "ținem minte"
+  let state = "idle";
+  let results = [];          // timpii rundelor terminate, în ms
+  let goTime = 0;            // momentul exact în care ecranul a devenit verde
+  let waitTimer = null;      // referința la setTimeout, ca să-l putem anula
+  let falseStarts = 0;       // de câte ori ai apăsat prea devreme
+  let best = loadBest();     // cel mai bun timp salvat în browser
+
+  /* ---------- Salvare record în browser (localStorage) ----------
+     localStorage păstrează date chiar dacă închizi pagina, dar doar pe
+     dispozitivul acesta. Folosim try/catch pentru că în unele browsere
+     (ex. mod privat) accesul poate da eroare, iar pagina trebuie să
+     meargă oricum. */
+  function loadBest() {
+    try {
+      const v = Number(localStorage.getItem(STORAGE_KEY));
+      return v > 0 ? v : null;
+    } catch (e) { return null; }
+  }
+  function saveBest(ms) {
+    try { localStorage.setItem(STORAGE_KEY, String(ms)); } catch (e) {}
+  }
+  function clearBest() {
+    try { localStorage.removeItem(STORAGE_KEY); } catch (e) {}
+  }
+
+  /* ---------- Funcții ajutătoare ---------- */
+  const average = (arr) => arr.reduce((a, b) => a + b, 0) / arr.length;
+
+  // Număr întreg aleator între min și max
+  const randomBetween = (min, max) => Math.floor(min + Math.random() * (max - min));
+
+  // Schimbă ce se vede pe pad: starea (culoarea), titlul și textul mic
+  function setPad(newState, mainHtml, sub) {
+    state = newState;
+    pad.dataset.state = newState;      // CSS-ul reacționează la acest atribut
+    padMain.innerHTML = mainHtml;
+    padSub.textContent = sub || "";
+  }
+
+  // Rezultat în format mare: 253 ms
+  const msHtml = (ms) => '<span class="ms">' + Math.round(ms) + '</span><span class="unit">ms</span>';
+
+  /* ---------- Pașii testului ---------- */
+  function startRound() {
+    setPad("waiting", "Așteaptă…", "Nu apăsa încă. Așteaptă culoarea verde.");
+    statusEl.textContent = "Așteaptă culoarea verde.";
+    // Pauză aleatorie, ca să nu poți ghici momentul
+    waitTimer = setTimeout(turnGreen, randomBetween(MIN_WAIT, MAX_WAIT));
+    renderStats();
+  }
+
+  function turnGreen() {
+    setPad("go", "APASĂ!", "");
+    statusEl.textContent = "Apasă acum!";
+    // performance.now() dă timpul cu precizie sub o milisecundă.
+    // Îl luăm DUPĂ ce am schimbat culoarea, ca să măsurăm cât de repede apeși.
+    goTime = performance.now();
+  }
+
+  function tooEarly() {
+    clearTimeout(waitTimer);           // oprim timerul, altfel ecranul ar deveni verde singur
+    falseStarts++;
+    setPad("early", "Prea devreme!", "Așteaptă verdele. Apasă pentru a relua runda.");
+    statusEl.textContent = "Ai apăsat înainte de verde. Runda nu a contat.";
+    renderStats();
+  }
+
+  function recordReaction(now) {
+    const ms = now - goTime;           // asta este timpul de reacție
+    results.push(ms);
+    if (best === null || ms < best) {  // record nou?
+      best = ms;
+      saveBest(ms);
+    }
+    renderStats();
+
+    if (results.length < ROUNDS) {
+      setPad("result", msHtml(ms), "Apasă pentru runda următoare.");
+      statusEl.textContent = "Timp: " + Math.round(ms) + " milisecunde.";
+    } else {
+      finish();
+    }
+  }
+
+  function finish() {
+    const avg = average(results);
+    setPad("done", msHtml(avg), "Media celor " + ROUNDS + " încercări. Apasă pentru o sesiune nouă.");
+    statusEl.textContent = "Sesiune terminată. Media ta: " + Math.round(avg) + " milisecunde.";
+    verdictEl.textContent = verdictFor(avg);
+    drawScale(avg);
+    summary.hidden = false;
+  }
+
+  function resetSession() {
+    clearTimeout(waitTimer);
+    results = [];
+    falseStarts = 0;
+    summary.hidden = true;
+    startRound();
+  }
+
+  /* ---------- Ce se întâmplă la apăsare ----------
+     O singură funcție decide, în funcție de starea curentă. */
+  function handlePress() {
+    const now = performance.now();     // luăm timpul chiar la începutul apăsării
+    if (state === "idle")         startRound();
+    else if (state === "waiting") tooEarly();
+    else if (state === "go")      recordReaction(now);
+    else if (state === "early")   startRound();
+    else if (state === "result")  startRound();
+    else if (state === "done")    resetSession();
+  }
+
+  /* ---------- Desenarea statisticilor ---------- */
+  function renderStats() {
+    const shown = results.length + ((state === "waiting" || state === "go") ? 1 : 0);
+    statRound.textContent = Math.min(shown, ROUNDS) + " / " + ROUNDS;
+    statLast.textContent = results.length ? Math.round(results[results.length - 1]) + " ms" : "–";
+    statAvg.textContent = results.length ? Math.round(average(results)) + " ms" : "–";
+    statBest.textContent = best ? Math.round(best) + " ms" : "–";
+
+    // Lista cu cele 5 încercări (cele neterminate apar goale)
+    roundsEl.innerHTML = "";
+    for (let i = 0; i < ROUNDS; i++) {
+      const li = document.createElement("li");
+      if (i < results.length) {
+        li.textContent = Math.round(results[i]) + " ms";
+        li.classList.add("filled");
+      } else {
+        li.textContent = "—";
+      }
+      roundsEl.appendChild(li);
+    }
+    if (falseStarts > 0) {
+      const li = document.createElement("li");
+      li.textContent = "Starturi false: " + falseStarts;
+      roundsEl.appendChild(li);
+    }
+  }
+
+  /* ---------- Verdictul și scara ---------- */
+  function verdictFor(avg) {
+    if (avg < 200) return "Foarte rapid. Reacție de top.";
+    if (avg < 250) return "Rapid, peste medie.";
+    if (avg < 300) return "În jurul mediei obișnuite.";
+    if (avg < 400) return "Puțin sub medie. Încearcă încă o dată, odihnit și concentrat.";
+    return "Lent pentru acest test. Verifică dacă erai distras sau dacă ecranul are întârziere.";
+  }
+
+  // Scara merge de la 100 ms la 500 ms. Transformăm milisecundele în procent din lățime.
+  const SCALE_MIN = 100, SCALE_MAX = 500;
+  const toPercent = (ms) => (Math.min(Math.max(ms, SCALE_MIN), SCALE_MAX) - SCALE_MIN) / (SCALE_MAX - SCALE_MIN) * 100;
+
+  function drawScale(avg) {
+    let html = '<div class="scale-track"></div>';
+    [100, 200, 300, 400, 500].forEach(function (v) {
+      html += '<span class="tick" style="left:' + toPercent(v) + '%">' + v + '</span>';
+    });
+    html += '<span class="marker ref" style="left:' + toPercent(250) + '%"></span>';
+    html += '<span class="marker" style="left:' + toPercent(avg) + '%"></span>';
+    html += '<span class="tag" style="left:' + Math.min(Math.max(toPercent(avg), 8), 92) + '%">tu: ' + Math.round(avg) + ' ms</span>';
+    scaleEl.innerHTML = html;
+  }
+
+  /* ---------- Legarea evenimentelor ----------
+     pointerdown se declanșează în momentul atingerii/apăsării, nu la
+     ridicarea degetului ca "click". Pe telefon asta face măsurătoarea
+     mai corectă. */
+  pad.addEventListener("pointerdown", function (e) {
+    e.preventDefault();
+    handlePress();
+  });
+
+  // Tastatura: Spațiu sau Enter fac același lucru ca apăsarea pe pad
+  document.addEventListener("keydown", function (e) {
+    if ((e.code === "Space" || e.code === "Enter") && !e.repeat) {
+      if (e.target && e.target.closest && e.target.closest(".actions")) return; // lăsăm butoanele să meargă normal
+      e.preventDefault();
+      handlePress();
+    }
+  });
+
+  document.getElementById("again").addEventListener("click", resetSession);
+  document.getElementById("resetBest").addEventListener("click", function () {
+    best = null;
+    clearBest();
+    renderStats();
+  });
+
+  // La încărcare desenăm starea inițială
+  renderStats();
+</script>
+
+</body>
+</html>
